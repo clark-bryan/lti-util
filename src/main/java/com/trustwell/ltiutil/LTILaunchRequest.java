@@ -1,18 +1,19 @@
 package com.trustwell.ltiutil;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.Serializable;
 import java.util.Map;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
 @NoArgsConstructor
-public class LTILaunchRequest {
+public class LTILaunchRequest implements Serializable {
 
     private Map<String, String> authHeaders;
     private Map<String, String> requestParameters;
     private Map<String, String> consumerPair;
-    private HttpServletRequest servletRequest;
+    private transient HttpServletRequest servletRequest;
     private String version;
     private String messageType;
     private String resourceLinkId;
