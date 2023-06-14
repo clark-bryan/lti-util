@@ -41,6 +41,10 @@ public class LTILaunchValidator {
         String key = authHeaders.get(OAUTH_CONSUMER_KEY);
         String secret = consumerPair.get(key);
 
+        return validateLaunchRequest(launchRequest, secret);
+    }
+
+    public static boolean validateLaunchRequest(LTILaunchRequest launchRequest, String secret) {
         return validateOAuthSignature(launchRequest.getServletRequest(), secret);
     }
 
