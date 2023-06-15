@@ -23,11 +23,16 @@ public class LTILaunchRequest implements Serializable {
     private String email;
     private String name;
     private String contextTitle;
+    private String roles;
 
+    private static final String CONTEXT_TITLE = "context_title";
+    private static final String CONTEXT_ID= "context_id";
+    private static final String REQUEST_NAME = "lis_person_name_given";
+    private static final String REQUEST_EMAIL = "lis_person_contact_email_primary";
+    private static final String REQUEST_ROLES = "roles";
     private static final String LTI_VERSION = "lti_version";
     private static final String LTI_MESSAGE_TYPE = "lti_message_type";
     private static final String LTI_RESOURCE_LINK_ID = "resource_link_id";
-    private static final String LTI_CONTEXT_ID = "context_id";
     private static final String LTI_LAUNCH_PRESENTATION_RETURN_URL = "launch_presentation_return_url";
     private static final String LTI_TOOL_CONSUMER_INSTANCE_GUID = "tool_consumer_instance_guid";
 
@@ -39,7 +44,11 @@ public class LTILaunchRequest implements Serializable {
         version = servletRequest.getParameter(LTI_VERSION);
         messageType = servletRequest.getParameter(LTI_MESSAGE_TYPE);
         resourceLinkId = servletRequest.getParameter(LTI_RESOURCE_LINK_ID);
-        contextId = servletRequest.getParameter(LTI_CONTEXT_ID);
+        contextId = servletRequest.getParameter(CONTEXT_ID);
+        contextTitle = servletRequest.getParameter(CONTEXT_TITLE);
+        name = servletRequest.getParameter(REQUEST_NAME);
+        email = servletRequest.getParameter(REQUEST_EMAIL);
+        roles = servletRequest.getParameter(REQUEST_ROLES);
         launchPresentationReturnUrl = servletRequest.getParameter(LTI_LAUNCH_PRESENTATION_RETURN_URL);
         toolConsumerInstanceGuid = servletRequest.getParameter(LTI_TOOL_CONSUMER_INSTANCE_GUID);
     }
