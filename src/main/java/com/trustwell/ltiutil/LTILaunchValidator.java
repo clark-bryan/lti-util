@@ -8,16 +8,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
+import java.util.*;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class LTILaunchValidator {
 
     private static final String OAUTH_CONSUMER_KEY = "oauth_consumer_key";
@@ -27,38 +26,45 @@ public class LTILaunchValidator {
     private static final String OAUTH_SIGNATURE_METHOD_KEY = "oauth_signature_method";
     private static final String OAUTH_VERSION_KEY = "oauth_version";
 
-    private LTILaunchValidator() {
-    }
-
-    public static boolean validateLaunchRequest(HttpServletRequest request, String consumers) {
-
-        Map<String, String> consumerPair = LTIUtils.getLtiConsumers(consumers);
-        Map<String, String> authHeaders = LTIUtils.getAuthorizationHeaders(request);
-        Map<String, String> requestParameters = LTIUtils.createRequestParametersMap(request);
-
-        LTILaunchRequest launchRequest = new LTILaunchRequest(authHeaders, requestParameters, consumerPair, request);
-
-        String key = authHeaders.get(OAUTH_CONSUMER_KEY);
-        String secret = consumerPair.get(key);
-
-        return validateLaunchRequest(launchRequest, secret);
-    }
-
     public static boolean validateLaunchRequest(LTILaunchRequest launchRequest, String secret) {
-        return validateOAuthSignature(launchRequest.getServletRequest(), secret);
+        return validateOAuthSignature(launchRequest, secret);
     }
 
-    private static boolean validateOAuthSignature(HttpServletRequest request, String secret) {
-        Map<String, String> authorizationHeaders = LTIUtils.getAuthorizationHeaders(request);
-        String baseString = generateBaseString(request, authorizationHeaders);
-        log.debug("Generated OAuth base string: {}", baseString);
-        return validateRequiredFields(authorizationHeaders)
-                && validateTimeStampLessThanFiveMinutes(authorizationHeaders.get(OAUTH_TIMESTAMP_KEY))
-                && validateSignature(authorizationHeaders.get(OAUTH_SIGNATURE_KEY), baseString, secret + "&", authorizationHeaders.get(OAUTH_SIGNATURE_METHOD_KEY));
+    private static boolean validateOAuthSignature(LTILaunchRequest launchRequest, String secret) {
+        HttpServletRequest request = launchRequest.request();
+        String requestMethod = request.getMethod().toUpperCase();
+        String requestUrl = normalizeUrl(request.getRequestURL().toString());
+        Map<String, String> requestParameters = launchRequest.requestParameters();
+        String requestSignature = requestParameters.get(OAUTH_SIGNATURE_KEY);
+
+        String baseString = constructBaseString(requestMethod, requestUrl, requestParameters);
+
+        log.debug("Generated base string from request: {}", baseString);
+
+        return validateRequiredFields(requestParameters)
+                && validateTimeStampLessThanFiveMinutes(requestParameters.get(OAUTH_TIMESTAMP_KEY))
+                && validateSignature(requestSignature, baseString, secret + "&", requestParameters.get(OAUTH_SIGNATURE_METHOD_KEY));
+    }
+
+    private static String constructBaseString(String method, String url, Map<String, String> parameters) {
+        parameters.remove("oauth_signature");
+        String encodedParameters = encode(normalizeAndConcatenateParameters(parameters));
+        String encodedMethod = encode(method);
+        String encodedUrl = encode(url);
+
+        return encodedMethod + "&" + encodedUrl + "&" + encodedParameters;
+    }
+
+    private static String normalizeAndConcatenateParameters(Map<String, String> parameters) {
+        List<String> normalizedParameters = parameters.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+                .toList();
+        return String.join("&", normalizedParameters);
     }
 
     private static boolean validateRequiredFields(Map<String, String> authorizationHeaders) {
-        Set<String> requiredValues = Set.of(OAUTH_CONSUMER_KEY, OAUTH_NONCE_KEY, OAUTH_SIGNATURE_KEY, OAUTH_SIGNATURE_METHOD_KEY, OAUTH_TIMESTAMP_KEY, OAUTH_VERSION_KEY);
+        Set<String> requiredValues = Set.of(OAUTH_CONSUMER_KEY, OAUTH_NONCE_KEY, OAUTH_SIGNATURE_METHOD_KEY, OAUTH_TIMESTAMP_KEY, OAUTH_VERSION_KEY);
         return authorizationHeaders.keySet().containsAll(requiredValues);
     }
 
@@ -88,36 +94,6 @@ public class LTILaunchValidator {
         }
     }
 
-    private static String generateBaseString(HttpServletRequest request, Map<String, String> authorizationHeaders) {
-        String httpMethod = request.getMethod();
-        String baseUrl = normalizeUrl(request.getRequestURL().toString());
-
-        Map<String, String> requestParameters = LTIUtils.createRequestParametersMap(request);
-        requestParameters.putAll(authorizationHeaders);
-
-        requestParameters = requestParameters.entrySet()
-                .stream()
-                .filter(entry -> !entry.getKey().equals("realm"))
-                .filter(entry -> !entry.getKey().equals("type"))
-                .filter(entry -> !entry.getKey().equals(OAUTH_SIGNATURE_KEY))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-        TreeMap<String, Object> sortedParameters = new TreeMap<>(requestParameters);
-
-        StringBuilder parameterBuilder = new StringBuilder();
-
-        sortedParameters.entrySet()
-                .stream()
-                .map(entry -> entry.getKey() + "=" + URLEncoder.encode((String) entry.getValue(), StandardCharsets.UTF_8) + "&").forEachOrdered(parameterBuilder::append);
-
-        String parameterString = parameterBuilder.toString();
-        if (parameterString.length() > 0) {
-            parameterString = parameterString.substring(0, parameterString.length() - 1);
-        }
-
-        return httpMethod.toUpperCase() + "&" + URLEncoder.encode(baseUrl, StandardCharsets.UTF_8) + "&" + URLEncoder.encode(parameterString, StandardCharsets.UTF_8);
-    }
-
     private static String normalizeUrl(String url) {
         try {
             URL u = new URL(url);
@@ -130,5 +106,12 @@ public class LTILaunchValidator {
         } catch (MalformedURLException e) {
             return "";
         }
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8)
+                .replace("+", "%20")
+                .replace("*", "%2A")
+                .replace("%7E", "~");
     }
 }

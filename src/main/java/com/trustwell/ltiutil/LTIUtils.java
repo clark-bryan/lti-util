@@ -1,60 +1,19 @@
 package com.trustwell.ltiutil;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 
 @Slf4j
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class LTIUtils {
 
-    private LTIUtils() {}
-
-    public static Map<String, String> getAuthorizationHeaders(HttpServletRequest request) {
-        Map<String, String> authHeaders = new HashMap<>();
-        String authHeader = request.getHeader("authorization");
-
-        if (authHeader != null) {
-            String[] parts = authHeader.split(" ");
-            int expectedPartsLength = 2;
-
-            if (parts.length == expectedPartsLength) {
-                int typeIndex = 0;
-                int pairIndex = 1;
-
-                authHeaders.put("type", parts[typeIndex]);
-                String[] keyValuePairs = parts[pairIndex].split(",");
-
-                for (String keyValuePair : keyValuePairs) {
-                    int expectedPairLength = 2;
-                    int keyIndex = 0;
-                    int valueIndex = 1;
-
-                    String[] pair = keyValuePair.split("=", 2);
-                    if (pair.length == expectedPairLength) {
-                        authHeaders.put(pair[keyIndex].trim(), pair[valueIndex].trim().replace("\"", ""));
-                    }
-                }
-            }
-        } else {
-            authHeaders.putAll(getAuthHeadersFromParametersMap(request.getParameterMap()));
-        }
-        return authHeaders;
-    }
-
-    public static Map<String, String> getAuthHeadersFromParametersMap(Map<String, String[]> parameterMap) {
-        return parameterMap.entrySet()
-                .stream()
-                .filter(entry -> entry.getKey().startsWith("oauth_"))
-                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue()[0]));
-    }
-
-    public static Map<String, String> createRequestParametersMap(HttpServletRequest request) {
-        Map<String, String[]> parameterMap = request.getParameterMap();
-        return parameterMap.entrySet()
+    static Map<String, String> createRequestParametersMap(HttpServletRequest request) {
+        return request.getParameterMap().entrySet()
                 .stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue()[0]));
     }
@@ -65,25 +24,60 @@ public class LTIUtils {
         return json.toString();
     }
 
+    public static Map<String, String> getRequestParameters(HttpServletRequest request) {
+        // initialize a map and add all the parameters in the request
+        Map<String, String> requestParameters = new HashMap<>(request.getParameterMap().entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue()[0])));
+
+        // add oauth request headers to parameter list
+        String authorizationHeader = request.getHeader("authorization");
+        if (authorizationHeader != null) {
+            requestParameters.putAll(extractOauthAuthorizationValues(authorizationHeader));
+        }
+
+        return requestParameters;
+    }
+
+    private static Map<String, String> extractOauthAuthorizationValues(String authHeader) {
+        // Remove "OAuth" prefix
+        String oauthString = authHeader.replace("OAuth ", "");
+
+        // Split the string into key-value pairs
+        String[] pairs = oauthString.split(",");
+
+        // Create a map to store the key-value pairs
+        Map<String, String> oauthMap = new HashMap<>();
+
+        // Iterate through the pairs and add them to the map
+        for (String pair : pairs) {
+            // Split the pair into key and value accounting for values that may have an = in them
+            int equalsIndex = pair.indexOf('=');
+            String key = pair.substring(0, equalsIndex);
+            String value = pair.substring(equalsIndex + 1);
+
+            // Remove leading and trailing quotes from the value
+            value = value.replaceAll("^\"|\"$", "");
+
+            // Add the key-value pair to the map
+            oauthMap.put(key, value);
+        }
+
+        return oauthMap;
+    }
+
     public static Map<String, String> getLtiConsumers(final String consumers) {
-        HashMap<String, String> map = new HashMap<>();
-        if (consumers != null) {
-            log.debug("consumers: {}",  consumers);
-            String[] pairs = consumers.split(",");
-            for (String pair : pairs) {
-                pair = pair.replace(" ", "");
-                log.debug("pair: {}", pair);
-                String[] keySecret = pair.split("=");
-                if (keySecret.length < 2) {
-                    log.debug("Rejecting invalid consumer key/secret combo: {}", pair);
-                    throw new IllegalArgumentException("Missing consumer secret: "+pair);
-                }
-                map.put(keySecret[0], keySecret[1]);
-            }
-        }
-        if (map.isEmpty()) {
-            log.debug("No consumers were configured for this instance.");
-        }
-        return Collections.unmodifiableMap(map);
+        Map<String, String> map = new HashMap<>();
+
+        Optional.ofNullable(consumers)
+                .ifPresent(c -> Arrays.stream(c.split(","))
+                        .map(pair -> pair.replace(" ", ""))
+                        .map(pair -> pair.split("="))
+                        .forEach(keySecret -> {
+                            if (keySecret.length < 2) {
+                                throw new IllegalArgumentException("Missing consumer secret: " + Arrays.toString(keySecret));
+                            }
+                            map.put(keySecret[0], keySecret[1]);
+                        }));
+        return map;
     }
 }
