@@ -8,7 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.AccessLevel;
@@ -26,6 +28,7 @@ public class LTILaunchValidator {
     private static final String OAUTH_SIGNATURE_METHOD_KEY = "oauth_signature_method";
     private static final String OAUTH_VERSION_KEY = "oauth_version";
 
+    @SuppressWarnings("unused”")
     public static boolean validateLaunchRequest(LTILaunchRequest launchRequest, String secret) {
         return validateOAuthSignature(launchRequest, secret);
     }
@@ -43,11 +46,11 @@ public class LTILaunchValidator {
 
         return validateRequiredFields(requestParameters)
                 && validateTimeStampLessThanFiveMinutes(requestParameters.get(OAUTH_TIMESTAMP_KEY))
-                && validateSignature(requestSignature, baseString, secret + "&", requestParameters.get(OAUTH_SIGNATURE_METHOD_KEY));
+                && validateSignature(requestSignature, baseString, secret, requestParameters.get(OAUTH_SIGNATURE_METHOD_KEY));
     }
 
     private static String constructBaseString(String method, String url, Map<String, String> parameters) {
-        parameters.remove("oauth_signature");
+        parameters.remove(OAUTH_SIGNATURE_KEY);
         String encodedParameters = encode(normalizeAndConcatenateParameters(parameters));
         String encodedMethod = encode(method);
         String encodedUrl = encode(url);
@@ -63,19 +66,20 @@ public class LTILaunchValidator {
         return String.join("&", normalizedParameters);
     }
 
-    private static boolean validateRequiredFields(Map<String, String> authorizationHeaders) {
+    private static boolean validateRequiredFields(Map<String, String> requestParameters) {
         Set<String> requiredValues = Set.of(OAUTH_CONSUMER_KEY, OAUTH_NONCE_KEY, OAUTH_SIGNATURE_METHOD_KEY, OAUTH_TIMESTAMP_KEY, OAUTH_VERSION_KEY);
-        return authorizationHeaders.keySet().containsAll(requiredValues);
+        return requestParameters.keySet().containsAll(requiredValues);
     }
 
-    private static boolean validateTimeStampLessThanFiveMinutes(String timestampToValidate) {
-        long currentTimeMillis = System.currentTimeMillis() / 1000;
-        long timestampMillis = Long.parseLong(timestampToValidate);
-        return (currentTimeMillis - timestampMillis) <= (5 * 60 * 1000);
+    private static boolean validateTimeStampLessThanFiveMinutes(String oauthTimestamp) {
+        long currentTimestamp = Instant.now().getEpochSecond();
+        long timestampDifference = currentTimestamp - Long.parseLong(oauthTimestamp);
+        long timestampDifferenceInMinutes = TimeUnit.SECONDS.toMinutes(timestampDifference);
+        return timestampDifferenceInMinutes <= 5;
     }
 
-    private static boolean validateSignature(String signature, String message, String secret, String signatureMethod) {
-        log.debug("Validating OAuth signature with values of: signature: {}, message {}, secret {}, signature method {}", signature, message, secret, signatureMethod);
+    private static boolean validateSignature(String signature, String baseString, String secret, String signatureMethod) {
+        log.debug("Validating OAuth signature with values of: signature: {}, message {}, secret {}, signature method {}", signature, baseString, secret, signatureMethod);
         try {
             if (MacAlgorithm.isValidAlgorithm(signatureMethod)) {
                 signatureMethod = MacAlgorithm.getAlgorithmFromSignatureMethodString(signatureMethod);
@@ -84,10 +88,10 @@ public class LTILaunchValidator {
             }
 
             assert signatureMethod != null;
-            SecretKeySpec keySpec = new SecretKeySpec(secret.getBytes(), signatureMethod);
+            SecretKeySpec keySpec = new SecretKeySpec((secret + "&").getBytes(), signatureMethod);
             Mac mac = Mac.getInstance(signatureMethod);
             mac.init(keySpec);
-            byte[] expectedSignature = Base64.getEncoder().encode(mac.doFinal(message.getBytes()));
+            byte[] expectedSignature = Base64.getEncoder().encode(mac.doFinal(baseString.getBytes()));
             return MessageDigest.isEqual(expectedSignature, signature.getBytes());
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             return false;

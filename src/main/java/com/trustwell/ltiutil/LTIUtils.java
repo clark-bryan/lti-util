@@ -56,7 +56,7 @@ public class LTIUtils {
             String value = pair.substring(equalsIndex + 1);
 
             // Remove leading and trailing quotes from the value
-            value = value.replaceAll("^\"|\"$", "");
+            value = value.replaceAll("^(\"|\")$", "");
 
             // Add the key-value pair to the map
             oauthMap.put(key, value);
