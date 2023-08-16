@@ -1,15 +1,17 @@
 plugins {
+    id 'com.jfrog.artifactory' version '5.+' // replace with the specific version you want
     id 'groovy'
     id 'maven-publish'
 }
 
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
 group = 'com.trustwell'
 version = '1.0.0'
-
-repositories {
-    mavenLocal()
-    mavenCentral()
-}
 
 dependencies {
     implementation 'org.json:json:20230227'
@@ -29,8 +31,25 @@ test {
 
 publishing {
     publications {
-        maven(MavenPublication) {
+        mavenJava(MavenPublication) {
             from components.java
+        }
+    }
+}
+
+artifactory {
+    publish {
+        contextUrl = "${artifactory_contextUrl}"
+        repository {
+            repoKey = 'libs-releases-local'
+            username = "${artifactory_user}"
+            password = "${artifactory_password}"
+        }
+
+        defaults {
+            publications('ALL_PUBLICATIONS')
+            publishArtifacts = true
+            publishPom = true
         }
     }
 }
